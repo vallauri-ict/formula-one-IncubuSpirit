@@ -10,6 +10,7 @@ namespace FormulaOneConsole
     {
         public const string WORKINGPATH = @"D:\FormulaOne_data\";
         private const string CONNECTION_STRING = @"Data Source=(LocalDB)\MSSQLLocalDB;AttachDbFilename=" + WORKINGPATH + @"FormulaOne.mdf;Integrated Security=True";
+        private static string[] tableNames = { "Countries.sql", "Teams.sql", "drivers.sql" };
 
         private static void menu()
         {
@@ -32,7 +33,7 @@ namespace FormulaOneConsole
             do
             {
                 menu();
-                c = Char.ToUpper(Console.ReadKey().KeyChar);
+                c = Console.ReadKey().KeyChar;
                 switch (c)
                 {
                     case '1':
@@ -57,21 +58,30 @@ namespace FormulaOneConsole
             } while (c != 'x' && c != 'X');
         }
 
-        public static void ExecuteSqlScript(string sqlScriptName)
+        static bool ExecuteSqlScript(string sqlScriptName, string tab = "")
         {
-            string fileContent = File.ReadAllText(WORKINGPATH + sqlScriptName);
-            fileContent = fileContent.Replace(",", "\n");
+            bool retVal = true;
+            var fileContent = File.ReadAllText(WORKINGPATH + sqlScriptName);
+            fileContent = fileContent.Replace("\r\n", "");
+            fileContent = fileContent.Replace("\r", "");
+            fileContent = fileContent.Replace("\n", "");
+            fileContent = fileContent.Replace("\t", "");
+
+            if (sqlScriptName == "drop.sql")
+            {
+                fileContent = fileContent.Replace("table_name", tab);
+            }
+
             var sqlqueries = fileContent.Split(new[] { ";" }, StringSplitOptions.RemoveEmptyEntries);
 
-            SqlConnection con = new SqlConnection(CONNECTION_STRING);
-            SqlCommand cmd = new SqlCommand("query", con);
+            var con = new SqlConnection(CONNECTION_STRING);
+            var cmd = new SqlCommand("query", con);
             con.Open();
-
-            int i = 0, nr = 0;
+            int i = 0;
+            int nErr = 0;
             foreach (var query in sqlqueries)
             {
-                cmd.CommandText = query;
-                i++;
+                cmd.CommandText = query; i++;
                 try
                 {
                     cmd.ExecuteNonQuery();
@@ -80,27 +90,49 @@ namespace FormulaOneConsole
                 {
                     Console.WriteLine("Errore in esecuzione della query numero: " + i);
                     Console.WriteLine("\tErrore SQL: " + err.Number + " - " + err.Message);
-                    nr++;
+                    nErr++;
+                    retVal = false;
                 }
             }
-
-            Console.Clear();
-            Console.WriteLine($"Processo di creazione della tabella \"{sqlScriptName.Substring(0, sqlScriptName.IndexOf('.'))}\" terminato con {i} error{(i == 1 ? "e" : "i")}.");
-            System.Threading.Thread.Sleep(3000);
-            con.Close();
+            string finalMessage = nErr == 0 ? "Script " + sqlScriptName + " completed successfully without errors" : "Script completed with " + nErr + " errors";
+            Console.WriteLine(finalMessage);
+            return retVal;
         }
+
+
         public static void ResetDb()
         {
-            string[] tables = new string[] { "Countries.sql", "Teams.sql", "drivers.sql"};
-            for (int i = 0; i < tables.Length; i++)
+            Backup();
+            for (int i = 0; i < tableNames.Length; i++)
             {
                 SqlConnection con = new SqlConnection(CONNECTION_STRING);
-                SqlCommand cmd = new SqlCommand("query", con);
-                con.Open();
-                string query = "DROP TABLE IF EXIST"+tables[i];
-                cmd.CommandText = query;
-                con.Close();
-                ExecuteSqlScript(tables[i]);
+                SqlCommand cmd = new SqlCommand("DROP TABLE [ IF EXISTS ] " + tableNames[i], con);
+                try
+                {
+                    con.Open();
+                    cmd.ExecuteNonQuery();
+                    con.Close();
+                }
+                catch (SqlException ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+                ExecuteSqlScript(tableNames[i]);
+            }
+        }
+
+        public static void Backup()
+        {
+            try
+            {
+                SqlConnection con = new SqlConnection(CONNECTION_STRING);
+                string sqlStmt = "";
+                foreach(string table in tableNames)
+                {
+                    
+                    sqlStmt += "SELECT * INTO " + table + "_bck FROM " + table + ";";
+                }
+                Console.WriteLine(sqlStmt);
             }
         }
     }
